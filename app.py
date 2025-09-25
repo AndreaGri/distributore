@@ -1,5 +1,6 @@
 import json
 from flask import Flask, jsonify, request
+from flasgger import Swagger
 
 # ==============================================================================
 # 1. CLASSE DISTRIBUTORE E DATI INIZIALI
@@ -7,7 +8,10 @@ from flask import Flask, jsonify, request
 
 class Distributore:
     """Rappresenta un singolo distributore con tutte le sue informazioni."""
-    def __init__(self, id, nome, indirizzo, citta, provincia, lat, lon, livello_benzina, capacita_benzina, livello_diesel, capacita_diesel, prezzo_benzina, prezzo_diesel):
+    def __init__(self, id, nome, indirizzo, citta, provincia, lat, lon,
+                 livello_benzina, capacita_benzina,
+                 livello_diesel, capacita_diesel,
+                 prezzo_benzina, prezzo_diesel):
         self.id = id
         self.nome = nome
         self.indirizzo = indirizzo
@@ -42,30 +46,126 @@ distributori = [
 app = Flask(__name__)
 
 # ==============================================================================
-# 3. ROTTE API (per la gestione dei dati)
+# 3. ROTTE API (con documentazione Swagger)
 # ==============================================================================
 
 @app.route('/api/distributori', methods=['GET'])
 def get_distributori():
-    """API 0: Ritorna l'elenco ordinato di tutti i distributori."""
+    """
+    Elenco distributori
+    ---
+    get:
+      summary: Elenco distributori
+      description: Ritorna l'elenco ordinato di tutti i distributori.
+      responses:
+        200:
+          description: Lista dei distributori
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Distributore'
+    """
     distributori_ordinati = sorted(distributori, key=lambda d: d.id)
     return jsonify([d.to_dict() for d in distributori_ordinati])
 
+
 @app.route('/api/livello/provincia/<string:provincia>', methods=['GET'])
 def get_livello_provincia(provincia):
-    """API 1: Ritorna i livelli dei distributori di una provincia."""
+    """
+    Livelli per provincia
+    ---
+    parameters:
+      - name: provincia
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Sigla della provincia (es. MI, RM, NA, TO)
+    responses:
+      200:
+        description: Lista dei distributori della provincia
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Distributore'
+    """
     risultato = [d.to_dict() for d in distributori if d.provincia.lower() == provincia.lower()]
     return jsonify(risultato)
 
+
 @app.route('/api/livello/distributore/<int:distributore_id>', methods=['GET'])
 def get_livello_distributore(distributore_id):
-    """API 2: Ritorna i livelli di un distributore specifico."""
+    """
+    Livelli per distributore
+    ---
+    parameters:
+      - name: distributore_id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: ID del distributore
+    responses:
+      200:
+        description: Dati del distributore
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Distributore'
+      404:
+        description: Distributore non trovato
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                errore:
+                  type: string
+    """
     distributore = next((d for d in distributori if d.id == distributore_id), None)
     return jsonify(distributore.to_dict()) if distributore else (jsonify({"errore": "Distributore non trovato"}), 404)
 
+
 @app.route('/api/prezzo/provincia/<string:provincia>', methods=['POST'])
 def set_prezzo_provincia(provincia):
-    """API per modificare il prezzo per provincia."""
+    """
+    Aggiornamento prezzi per provincia
+    ---
+    parameters:
+      - name: provincia
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Sigla della provincia
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              prezzo_benzina:
+                type: number
+                format: float
+              prezzo_diesel:
+                type: number
+                format: float
+    responses:
+      200:
+        description: Prezzi aggiornati
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messaggio:
+                  type: string
+    """
     data = request.get_json()
     modificati = 0
     for d in distributori:
@@ -78,11 +178,43 @@ def set_prezzo_provincia(provincia):
     return jsonify({"messaggio": f"Prezzi aggiornati per {modificati} distributori."})
 
 # ==============================================================================
-# 4. ESECUZIONE DELL'APPLICAZIONE
+# 4. SCHEMI OPENAPI
+# ==============================================================================
+
+template = {
+  "components": {
+    "schemas": {
+      "Distributore": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "nome": {"type": "string"},
+          "indirizzo": {"type": "string"},
+          "citta": {"type": "string"},
+          "provincia": {"type": "string"},
+          "lat": {"type": "number", "format": "float"},
+          "lon": {"type": "number", "format": "float"},
+          "livello_benzina": {"type": "number"},
+          "capacita_benzina": {"type": "number"},
+          "livello_diesel": {"type": "number"},
+          "capacita_diesel": {"type": "number"},
+          "prezzo_benzina": {"type": "number", "format": "float"},
+          "prezzo_diesel": {"type": "number", "format": "float"}
+        }
+      }
+    }
+  }
+}
+
+swagger = Swagger(app, template=template)
+
+# ==============================================================================
+# 5. ESECUZIONE
 # ==============================================================================
 
 if __name__ == '__main__':
     print("=====================================================")
     print("🚀 API Server in esecuzione sulla porta 5001!")
+    print("📖 Documentazione disponibile su http://localhost:5001/apidocs/")
     print("=====================================================")
-    app.run(debug=True, port=5001)
+    app.run(host="0.0.0.0", debug=True, port=5001)
